@@ -62,13 +62,15 @@ var ENCODINGS = {
 };
 
 var _flatCamera = new OrthographicCamera();
-var _blurMaterial = _getBlurShader( MAX_SAMPLES );
+var _blurMaterial;
 var _equirectShader = null;
 var _cubemapShader = null;
 
 var { _lodPlanes, _sizeLods, _sigmas } = _createPlanes();
 var _pingPongRenderTarget = null;
 var _renderer = null;
+
+var _oldTarget = null;
 
 // Golden Ratio
 var PHI = ( 1 + Math.sqrt( 5 ) ) / 2;
@@ -87,8 +89,10 @@ var _axisDirections = [
 	new Vector3( PHI, INV_PHI, 0 ),
 	new Vector3( - PHI, INV_PHI, 0 ) ];
 
-function PMREMGenerator( renderer ) {
+function PMREMGenerator( renderer, blurFactor ) {
 
+	_blurMaterial = _getBlurShader( MAX_SAMPLES, blurFactor || "1.0" );
+	
 	_renderer = renderer;
 	_compileMaterial( _blurMaterial );
 
@@ -107,6 +111,7 @@ PMREMGenerator.prototype = {
 	 */
 	fromScene: function ( scene, sigma = 0, near = 0.1, far = 100 ) {
 
+		_oldTarget = _renderer.getRenderTarget();
 		var cubeUVRenderTarget = _allocateTargets();
 		_sceneToCubeUV( scene, near, far, cubeUVRenderTarget );
 		if ( sigma > 0 ) {
@@ -115,8 +120,7 @@ PMREMGenerator.prototype = {
 
 		}
 		_applyPMREM( cubeUVRenderTarget );
-		_cleanup();
-		cubeUVRenderTarget.scissorTest = false;
+		_cleanup( cubeUVRenderTarget );
 
 		return cubeUVRenderTarget;
 
@@ -144,11 +148,11 @@ PMREMGenerator.prototype = {
 	 */
 	fromCubemap: function ( cubemap ) {
 
+		_oldTarget = _renderer.getRenderTarget();
 		var cubeUVRenderTarget = _allocateTargets( cubemap );
 		_textureToCubeUV( cubemap, cubeUVRenderTarget );
 		_applyPMREM( cubeUVRenderTarget );
-		_cleanup();
-		cubeUVRenderTarget.scissorTest = false;
+		_cleanup( cubeUVRenderTarget );
 
 		return cubeUVRenderTarget;
 
@@ -298,12 +302,13 @@ function _allocateTargets( equirectangular ) {
 
 }
 
-function _cleanup() {
+function _cleanup( outputTarget ) {
 
 	_pingPongRenderTarget.dispose();
-	_renderer.setRenderTarget( null );
-	var size = _renderer.getSize( new Vector2() );
-	_renderer.setViewport( 0, 0, size.x, size.y );
+	_renderer.setRenderTarget( _oldTarget );
+	outputTarget.scissorTest = false;
+	// reset viewport and scissor
+	outputTarget.setSize( outputTarget.width, outputTarget.height );
 
 }
 
@@ -340,7 +345,6 @@ function _sceneToCubeUV( scene, near, far, cubeUVRenderTarget ) {
 
 	}
 
-	_renderer.setRenderTarget( cubeUVRenderTarget );
 	for ( var i = 0; i < 6; i ++ ) {
 
 		var col = i % 3;
@@ -360,8 +364,9 @@ function _sceneToCubeUV( scene, near, far, cubeUVRenderTarget ) {
 			cubeCamera.lookAt( 0, 0, forwardSign[ i ] );
 
 		}
-		_setViewport(
+		_setViewport( cubeUVRenderTarget,
 			col * SIZE_MAX, i > 2 ? SIZE_MAX : 0, SIZE_MAX, SIZE_MAX );
+		_renderer.setRenderTarget( cubeUVRenderTarget );
 		_renderer.render( scene, cubeCamera );
 
 	}
@@ -407,8 +412,8 @@ function _textureToCubeUV( texture, cubeUVRenderTarget ) {
 	uniforms[ 'inputEncoding' ].value = ENCODINGS[ texture.encoding ];
 	uniforms[ 'outputEncoding' ].value = ENCODINGS[ texture.encoding ];
 
+	_setViewport( cubeUVRenderTarget, 0, 0, 3 * SIZE_MAX, 2 * SIZE_MAX );
 	_renderer.setRenderTarget( cubeUVRenderTarget );
-	_setViewport( 0, 0, 3 * SIZE_MAX, 2 * SIZE_MAX );
 	_renderer.render( scene, _flatCamera );
 
 }
@@ -431,15 +436,10 @@ function _createRenderTarget( params ) {
 
 }
 
-function _setViewport( x, y, width, height ) {
+function _setViewport( target, x, y, width, height ) {
 
-	var invDpr = 1.0 / _renderer.getPixelRatio();
-	x *= invDpr;
-	y *= invDpr;
-	width *= invDpr;
-	height *= invDpr;
-	_renderer.setViewport( x, y, width, height );
-	_renderer.setScissor( x, y, width, height );
+	target.viewport.set( x, y, width, height );
+	target.scissor.set( x, y, width, height );
 
 }
 
@@ -568,13 +568,13 @@ function _halfBlur( targetIn, targetOut, lodIn, lodOut, sigmaRadians, direction,
 	2 * outputSize *
 		( lodOut > LOD_MAX - LOD_MIN ? lodOut - LOD_MAX + LOD_MIN : 0 );
 
+	_setViewport( targetOut, x, y, 3 * outputSize, 2 * outputSize );
 	_renderer.setRenderTarget( targetOut );
-	_setViewport( x, y, 3 * outputSize, 2 * outputSize );
 	_renderer.render( blurScene, _flatCamera );
 
 }
 
-function _getBlurShader( maxSamples ) {
+function _getBlurShader( maxSamples, blurFactor ) {
 
 	var weights = new Float32Array( maxSamples );
 	var poleAxis = new Vector3( 0, 1, 0 );
@@ -607,12 +607,9 @@ uniform bool latitudinal;
 uniform float dTheta;
 uniform float mipInt;
 uniform vec3 poleAxis;
-
 ${_getEncodings()}
-
 #define ENVMAP_TYPE_CUBE_UV
 #include <cube_uv_reflection_fragment>
-
 void main() {
 	gl_FragColor = vec4(0.0);
 	for (int i = 0; i < n; i++) {
@@ -625,7 +622,7 @@ void main() {
 			if (all(equal(axis, vec3(0.0))))
 				axis = cross(vec3(0.0, 1.0, 0.0), vOutputDirection);
 			axis = normalize(axis);
-			float theta = dTheta * float(dir * i);
+			float theta = dTheta * float(dir * i) * ${ blurFactor };
 			float cosTheta = cos(theta);
 			// Rodrigues' axis-angle rotation
 			vec3 sampleDirection = vOutputDirection * cosTheta
@@ -671,12 +668,9 @@ precision mediump int;
 varying vec3 vOutputDirection;
 uniform sampler2D envMap;
 uniform vec2 texelSize;
-
 ${_getEncodings()}
-
 #define RECIPROCAL_PI 0.31830988618
 #define RECIPROCAL_PI2 0.15915494
-
 void main() {
 	gl_FragColor = vec4(0.0);
 	vec3 outputDirection = normalize(vOutputDirection);
@@ -728,9 +722,7 @@ precision mediump float;
 precision mediump int;
 varying vec3 vOutputDirection;
 uniform samplerCube envMap;
-
 ${_getEncodings()}
-
 void main() {
 	gl_FragColor = vec4(0.0);
 	gl_FragColor.rgb = envMapTexelToLinear(textureCube(envMap, vec3( - vOutputDirection.x, vOutputDirection.yz ))).rgb;
@@ -792,9 +784,7 @@ function _getEncodings() {
 	return `
 uniform int inputEncoding;
 uniform int outputEncoding;
-
 #include <encodings_pars_fragment>
-
 vec4 inputTexelToLinear(vec4 value){
 	if(inputEncoding == 0){
 		return value;
@@ -812,7 +802,6 @@ vec4 inputTexelToLinear(vec4 value){
 		return GammaToLinear(value, 2.2);
 	}
 }
-
 vec4 linearToOutputTexel(vec4 value){
 	if(outputEncoding == 0){
 		return value;
@@ -830,7 +819,6 @@ vec4 linearToOutputTexel(vec4 value){
 		return LinearToGamma(value, 2.2);
 	}
 }
-
 vec4 envMapTexelToLinear(vec4 color) {
 	return inputTexelToLinear(color);
 }
