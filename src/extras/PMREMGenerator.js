@@ -62,7 +62,7 @@ var ENCODINGS = {
 };
 
 var _flatCamera = new OrthographicCamera();
-var _blurMaterial = _getBlurShader( MAX_SAMPLES );
+var _blurMaterial;
 var _equirectShader = null;
 var _cubemapShader = null;
 
@@ -89,8 +89,10 @@ var _axisDirections = [
 	new Vector3( PHI, INV_PHI, 0 ),
 	new Vector3( - PHI, INV_PHI, 0 ) ];
 
-function PMREMGenerator( renderer ) {
+function PMREMGenerator( renderer, blurFactor ) {
 
+	_blurMaterial = _getBlurShader( MAX_SAMPLES, blurFactor || "1.0" );
+	
 	_renderer = renderer;
 	_compileMaterial( _blurMaterial );
 
@@ -572,7 +574,7 @@ function _halfBlur( targetIn, targetOut, lodIn, lodOut, sigmaRadians, direction,
 
 }
 
-function _getBlurShader( maxSamples ) {
+function _getBlurShader( maxSamples, blurFactor ) {
 
 	var weights = new Float32Array( maxSamples );
 	var poleAxis = new Vector3( 0, 1, 0 );
@@ -623,7 +625,7 @@ void main() {
 			if (all(equal(axis, vec3(0.0))))
 				axis = cross(vec3(0.0, 1.0, 0.0), vOutputDirection);
 			axis = normalize(axis);
-			float theta = dTheta * float(dir * i);
+			float theta = dTheta * float(dir * i) * ${ blurFactor };
 			float cosTheta = cos(theta);
 			// Rodrigues' axis-angle rotation
 			vec3 sampleDirection = vOutputDirection * cosTheta
