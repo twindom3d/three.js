@@ -1022,7 +1022,7 @@ THREE.ThreeMFLoader.prototype = Object.assign( Object.create( THREE.Loader.proto
 
 			// material
 
-			var material = new THREE.MeshPhongMaterial( { vertexColors: THREE.VertexColors, flatShading: true } );
+			var material = new THREE.MeshPhongMaterial( { vertexColors: true, flatShading: true } );
 
 			// mesh
 
@@ -1275,7 +1275,7 @@ THREE.ThreeMFLoader.prototype = Object.assign( Object.create( THREE.Loader.proto
 
 				var object3D = build.clone();
 
-				// apply component transfrom
+				// apply component transform
 
 				var transform = component.transform;
 

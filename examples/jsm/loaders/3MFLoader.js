@@ -38,7 +38,6 @@ import {
 	NearestFilter,
 	RepeatWrapping,
 	TextureLoader,
-	VertexColors,
 	sRGBEncoding
 } from "../../../build/three.module.js";
 
@@ -1046,7 +1045,7 @@ ThreeMFLoader.prototype = Object.assign( Object.create( Loader.prototype ), {
 
 			// material
 
-			var material = new MeshPhongMaterial( { vertexColors: VertexColors, flatShading: true } );
+			var material = new MeshPhongMaterial( { vertexColors: true, flatShading: true } );
 
 			// mesh
 
@@ -1299,7 +1298,7 @@ ThreeMFLoader.prototype = Object.assign( Object.create( Loader.prototype ), {
 
 				var object3D = build.clone();
 
-				// apply component transfrom
+				// apply component transform
 
 				var transform = component.transform;
 

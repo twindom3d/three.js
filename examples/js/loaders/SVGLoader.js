@@ -51,6 +51,10 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				case 'svg':
 					break;
 
+				case 'style':
+					parseCSSStylesheet( node );
+					break;
+
 				case 'g':
 					style = parseStyle( node, style );
 					break;
@@ -91,7 +95,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 					break;
 
 				default:
-					console.log( node );
+					// console.log( node );
 
 			}
 
@@ -558,6 +562,34 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 		}
 
+		function parseCSSStylesheet( node ) {
+
+			if ( !node.sheet || !node.sheet.cssRules || !node.sheet.cssRules.length ) return;
+
+			for ( var i = 0; i < node.sheet.cssRules.length; i ++ ) {
+
+				var stylesheet = node.sheet.cssRules[ i ];
+
+				if ( stylesheet.type !== 1 ) continue;
+
+				var selectorList = stylesheet.selectorText
+					.split( /,/gm )
+					.filter( Boolean )
+					.map( i => i.trim() );
+
+				for ( var j = 0; j < selectorList.length; j ++ ) {
+
+					stylesheets[ selectorList[ j ] ] = Object.assign(
+						stylesheets[ selectorList[ j ] ] || {},
+						stylesheet.style
+					);
+
+				}
+				
+			}
+
+		}
+
 		/**
 		 * https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
 		 * https://mortoray.com/2017/02/16/rendering-an-svg-elliptical-arc-as-bezier-curves/ Appendix: Endpoint to center arc conversion
@@ -794,6 +826,29 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 			style = Object.assign( {}, style ); // clone style
 
+			var stylesheetStyles = {};
+
+			if ( node.hasAttribute( 'class' ) ) {
+
+				var classSelectors = node.getAttribute( 'class' )
+					.split( /\s/ )
+					.filter( Boolean )
+					.map( i => i.trim() );
+
+				for ( var i = 0; i < classSelectors.length; i ++ ) {
+
+					stylesheetStyles = Object.assign( stylesheetStyles, stylesheets[ '.' + classSelectors[ i ] ] );
+
+				}
+
+			}
+
+			if ( node.hasAttribute( 'id' ) ) {
+
+				stylesheetStyles = Object.assign( stylesheetStyles, stylesheets[ '#' + node.getAttribute( 'id' ) ] );
+
+			}
+
 			function addStyle( svgName, jsName, adjustFunction ) {
 
 				if ( adjustFunction === undefined ) adjustFunction = function copy( v ) {
@@ -803,6 +858,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				};
 
 				if ( node.hasAttribute( svgName ) ) style[ jsName ] = adjustFunction( node.getAttribute( svgName ) );
+				if ( stylesheetStyles[ svgName ] ) style[ jsName ] = adjustFunction( stylesheetStyles[ svgName ] );
 				if ( node.style && node.style[ svgName ] !== '' ) style[ jsName ] = adjustFunction( node.style[ svgName ] );
 
 			}
@@ -821,12 +877,14 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 			addStyle( 'fill', 'fill' );
 			addStyle( 'fill-opacity', 'fillOpacity', clamp );
+			addStyle( 'opacity', 'opacity', clamp );
 			addStyle( 'stroke', 'stroke' );
 			addStyle( 'stroke-opacity', 'strokeOpacity', clamp );
 			addStyle( 'stroke-width', 'strokeWidth', positive );
 			addStyle( 'stroke-linejoin', 'strokeLineJoin' );
 			addStyle( 'stroke-linecap', 'strokeLineCap' );
 			addStyle( 'stroke-miterlimit', 'strokeMiterLimit', positive );
+			addStyle( 'visibility', 'visibility' );
 
 			return style;
 
@@ -879,7 +937,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 		// Conversion: [ fromUnit ][ toUnit ] (-1 means dpi dependent)
 		var unitConversion = {
 
-			"mm" : {
+			"mm": {
 				"mm": 1,
 				"cm": 0.1,
 				"in": 1 / 25.4,
@@ -887,7 +945,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				"pc": 6 / 25.4,
 				"px": - 1
 			},
-			"cm" : {
+			"cm": {
 				"mm": 10,
 				"cm": 1,
 				"in": 1 / 2.54,
@@ -895,7 +953,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				"pc": 6 / 2.54,
 				"px": - 1
 			},
-			"in" : {
+			"in": {
 				"mm": 25.4,
 				"cm": 2.54,
 				"in": 1,
@@ -903,7 +961,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				"pc": 6,
 				"px": - 1
 			},
-			"pt" : {
+			"pt": {
 				"mm": 25.4 / 72,
 				"cm": 2.54 / 72,
 				"in": 1 / 72,
@@ -911,7 +969,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				"pc": 6 / 72,
 				"px": - 1
 			},
-			"pc" : {
+			"pc": {
 				"mm": 25.4 / 6,
 				"cm": 2.54 / 6,
 				"in": 1 / 6,
@@ -919,7 +977,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 				"pc": 1,
 				"px": - 1
 			},
-			"px" : {
+			"px": {
 				"px": 1
 			}
 
@@ -955,8 +1013,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 				scale = unitConversion[ "in" ][ scope.defaultUnit ] / scope.defaultDPI;
 
-			}
-			else {
+			} else {
 
 				scale = unitConversion[ theUnit ][ scope.defaultUnit ];
 
@@ -1233,9 +1290,8 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 		//
 
-		console.log( 'THREE.SVGLoader' );
-
 		var paths = [];
+		var stylesheets = {};
 
 		var transformStack = [];
 
@@ -1248,13 +1304,7 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 
 		var currentTransform = new THREE.Matrix3();
 
-		console.time( 'THREE.SVGLoader: DOMParser' );
-
 		var xml = new DOMParser().parseFromString( text, 'image/svg+xml' ); // application/xml
-
-		console.timeEnd( 'THREE.SVGLoader: DOMParser' );
-
-		console.time( 'THREE.SVGLoader: Parse' );
 
 		parseNode( xml.documentElement, {
 			fill: '#000',
@@ -1269,10 +1319,6 @@ THREE.SVGLoader.prototype = Object.assign( Object.create( THREE.Loader.prototype
 		var data = { paths: paths, xml: xml.documentElement };
 
 		// console.log( paths );
-
-
-		console.timeEnd( 'THREE.SVGLoader: Parse' );
-
 		return data;
 
 	}

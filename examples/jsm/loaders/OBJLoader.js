@@ -13,10 +13,8 @@ import {
 	Material,
 	Mesh,
 	MeshPhongMaterial,
-	NoColors,
 	Points,
-	PointsMaterial,
-	VertexColors
+	PointsMaterial
 } from "../../../build/three.module.js";
 
 var OBJLoader = ( function () {
@@ -418,8 +416,6 @@ var OBJLoader = ( function () {
 
 		parse: function ( text ) {
 
-			console.time( 'OBJLoader' );
-
 			var state = new ParserState();
 
 			if ( text.indexOf( '\r\n' ) !== - 1 ) {
@@ -742,7 +738,7 @@ var OBJLoader = ( function () {
 
 						material.name = sourceMaterial.name;
 						material.flatShading = sourceMaterial.smooth ? false : true;
-						material.vertexColors = hasVertexColors ? VertexColors : NoColors;
+						material.vertexColors = hasVertexColors;
 
 						state.materials[ materialHash ] = material;
 
@@ -802,8 +798,6 @@ var OBJLoader = ( function () {
 				container.add( mesh );
 
 			}
-
-			console.timeEnd( 'OBJLoader' );
 
 			return container;
 
